@@ -1,10 +1,17 @@
-import torch
-from skimage.restoration import denoise_tv_chambolle
-import numpy as np
+
+import os
 import math
 import bm3d
-import prox_tv
+import torch
+#import prox_tv
+import numpy as np
+
+from astropy.io import fits
+from astropy.wcs import WCS
+from astropy.nddata import Cutout2D
 from matplotlib.pyplot import imread, imsave
+from skimage.metrics import structural_similarity
+from skimage.restoration import denoise_tv_chambolle
 from skimage.restoration import denoise_nl_means, estimate_sigma
 
 
@@ -37,7 +44,7 @@ def A_superresolution(down_ratio, img_shape):
         dtype = torch.FloatTensor
 
     img_dim = img_shape[1]*img_shape[2]*img_shape[3]
-    
+
     h_sampling_position = np.arange(0, img_shape[2], down_ratio).reshape((-1,1))
     w_sampling_position = np.arange(0, img_shape[3], down_ratio).reshape((-1,1))
 
@@ -124,7 +131,7 @@ def projection_simplex_sort(v):
     theta = cssv[rho - 1] / rho
     w = torch.clamp(v - theta, min=0)
     return w.detach()
-    
+
 def proj_l1(v):
     u = torch.abs(v)
     if torch.sum(u) <= 1.:
@@ -138,7 +145,106 @@ def linf_prox(x, shrinkage_param):
 
 def linf_prox_x_b(x, b, shrinkage_param):
     return linf_prox(x-b, shrinkage_param) + b
-    
-# if __name__ == '__main__':
-#     test_v = torch.tensor([1,1])
-#     print(linf_prox(test_v,1))
+
+
+### reconstruction
+
+def get_header(dir, sz):
+    hdu = fits.open(os.path.join(dir, 'pdr3_dud/calexp-HSC-G-9813-0%2C0.fits'))[1]
+    header = hdu.header
+    cutout = Cutout2D(hdu.data, position=(sz//2, sz//2),
+                      size=sz, wcs=WCS(header))
+    return cutout.wcs.to_header()
+
+# gt/recon, [c,h,w]
+def reconstruct(gt, recon, recon_path, loss_dir, header=None):
+    sz = gt.shape[1]
+    np.save(recon_path + '.npy', recon)
+
+    print('GT max', np.round(np.max(gt, axis=(1,2)), 3) )
+    print('Recon pixl max ', np.round(np.max(recon, axis=(1,2)), 3) )
+    print('Recon stat ', round(np.min(recon), 3), round(np.median(recon), 3),
+          round(np.mean(recon), 3), round(np.max(recon), 3))
+
+    losses = get_losses(gt, recon, None, [1,2,4])
+
+    for nm, loss in zip(['_mse','_psnr','_ssim'], losses):
+        fn = '0_'+str(sz)+nm+'_0.npy'
+        loss = np.expand_dims(loss, axis=0)
+        print(loss)
+        np.save(os.path.join(loss_dir, fn), loss)
+
+    if header is not None:
+        hdu = fits.PrimaryHDU(data=recon, header=header)
+        hdu.writeto(recon_path + '.fits', overwrite=True)
+
+def calculate_ssim(gt, gen):
+    rg = np.max(gt)-np.min(gt)
+    return structural_similarity(gt, gen, data_range=rg)
+                                 #win_size=len(org_img))
+
+def calculate_sam_spectrum(gt, gen, convert_to_degree=False):
+    numerator = np.sum(np.multiply(gt, gen))
+    denominator = np.linalg.norm(gt) * np.linalg.norm(gen)
+    val = np.clip(numerator / denominator, -1, 1)
+    sam_angles = np.arccos(val)
+    if convert_to_degree:
+        sam_angles = sam_angles * 180.0 / np.pi
+    return sam_angles
+
+# image shape should be [sz,sz,nchls]
+def calculate_sam(org_img, pred_img, convert_to_degree=False):
+    numerator = np.sum(np.multiply(pred_img, org_img), axis=2)
+    denominator = np.linalg.norm(org_img, axis=2) * np.linalg.norm(pred_img, axis=2)
+    val = np.clip(numerator / denominator, -1, 1)
+    sam_angles = np.arccos(val)
+    if convert_to_degree:
+        sam_angles = sam_angles * 180.0 / np.pi
+    return np.mean(np.nan_to_num(sam_angles))
+
+def calculate_psnr(gen, gt):
+    mse = calculate_mse(gen, gt)
+    mx = np.max(gt)
+    return 20 * np.log10(mx / np.sqrt(mse))
+
+def calculate_mse(gen, gt):
+    mse = np.mean((gen - gt)**2)
+    return mse
+
+# calculate normalized cross correlation between given 2 imgs
+def calculate_ncc(img1, img2):
+    a, b = img1.flatten(), img2.flatten()
+    n = len(a)
+    return 1/n * np.sum( (a-np.mean(a)) * (b-np.mean(b)) /
+                         np.sqrt(np.var(a)*np.var(b)) )
+
+def get_loss(gt, gen, mx, j, option):
+    if option == 0:
+        loss = np.abs(gt[j] - gen[j]).mean()
+    elif option == 1:
+        loss = calculate_mse(gen[j], gt[j])
+    elif option == 2:
+        loss = calculate_psnr(gen[j], gt[j])
+    elif option == 3:
+        loss = calculate_sam(gen[:,:,j:j+1], gt[:,:,j:j+1])
+    elif option == 4:
+        loss = calculate_ssim(gen[j], gt[j])
+    elif option == 5: # min
+        loss = np.min(gen[j])
+    elif option == 6: # max
+        loss = np.max(gen[j])
+    elif option == 7: # meam
+        loss = np.mean(gen[j])
+    elif option == 8: # median
+        loss = np.median(gen[j])
+    return loss
+
+# calculate losses between gt and gen based on options
+def get_losses(gt, gen, mx, options):
+    nchl = gen.shape[0]
+    losses = np.zeros((len(options), nchl))
+
+    for i, option in enumerate(options):
+        for j in range(nchl):
+            losses[i, j] = get_loss(gt, gen, mx, j, option)
+    return losses
