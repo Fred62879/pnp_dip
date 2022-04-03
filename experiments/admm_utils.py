@@ -14,7 +14,7 @@ from skimage.metrics import structural_similarity
 from skimage.restoration import denoise_tv_chambolle
 from skimage.restoration import denoise_nl_means, estimate_sigma
 
-
+'''
 def A_inpainting(num_ratio, img_dim):
     if torch.cuda.is_available():
         dtype = torch.cuda.FloatTensor
@@ -32,6 +32,30 @@ def A_inpainting(num_ratio, img_dim):
         b_ = torch.zeros(img_dim, device=b.device)
         b_[chosen_ind] = b
         return b_
+    return A, At, A_diag
+'''
+
+def A_inpainting(mask_fn, ratio, img_dim, dtype):
+    if not os.path.exists(mask_fn):
+        mask = np.random.permutation(img_dim)
+        np.save(mask_fn, mask)
+    else:
+        mask = np.load(mask_fn)
+
+    num_measurements = int(img_dim * ratio//100)
+    chosen_ind = mask[:num_measurements]
+
+    A_diag= torch.zeros(img_dim).type(dtype)
+    A_diag[chosen_ind] = 1
+
+    def A(x):  # return unmasked pixel values
+        return x[chosen_ind]
+
+    def At(b): # mask unselected pixels (set to 0)
+        b_ = torch.zeros(img_dim, device=b.device)
+        b_[chosen_ind] = b
+        return b_
+
     return A, At, A_diag
 
 def A_superresolution(down_ratio, img_shape):

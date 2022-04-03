@@ -27,8 +27,8 @@ torch.backends.cudnn.benchmark = True
 def func(x):
     return torch.norm(A(x.reshape(-1)) - b) ** 2 / 2
 
-def load_data(f_name, output_dir, noise_sigma):
-    img = imread(f_name)
+def load_data(img_fn, mask_fn, output_dir, ratio, noise_sigma):
+    img = imread(img_fn)
     if img.dtype == 'uint8':
         img = img.astype('float32') / 255  # scale to [0, 1]
     elif img.dtype == 'float32':
@@ -39,16 +39,16 @@ def load_data(f_name, output_dir, noise_sigma):
     img = np.clip(resize(img, (128, 128)), 0, 1) ## CHANGED
     imsave(output_dir + '/true.png', img)
     img = img.transpose((2, 0, 1))
+    print(img.shape)
     x_true = torch.from_numpy(img).unsqueeze(0).type(dtype)
 
-    A, At, A_diag = A_inpainting(num_ratio, x_true.numel())
+    A, At, A_diag = A_inpainting(mask_fn, ratio, x_true.numel(), dtype)
 
     b = A(x_true.reshape(-1, ))
-    b = torch.clamp(b + noise_sigma * torch.randn(b.shape).type(dtype), 0, 1)
+    #b = torch.clamp(b + noise_sigma * torch.randn(b.shape).type(dtype), 0, 1)
     masked_img = At(b).reshape(1, 3, 128, 128)[0].permute((1, 2, 0)).cpu().numpy()
     imsave(output_dir + '/corrupted.png', masked_img)
     return b, x_true, A
-
 
 def init_model(x_true, sigma_0, L, prior):
     G = skip(3, 3,
@@ -144,39 +144,34 @@ if __name__ == '__main__':
     n_iters = args.niters
     spectral = args.spectral
     '''
-
+    img_sz = 128
+    rho = 1
     nfls = 5
-    spectral=False
+    L = 0.001
+    sigma_0 = 1
+    num_iters = 500
+    mask_ratio = 10.0
+    spectral = False
+    prior = 'nlm_prox'
+    noise_sigma = 10/255
+    shrinkage_param = 0.01
+    sample_intvl = num_iters // 4
 
     loss = 'l1_'
     dim = '2d_'+ str(nfls)
     data_dir = '../../../../data'
     #sz_str = str(img_sz) + ('_spectra' if spectral else '')
 
-    mask_dir = os.path.join(data_dir, 'pdr3_output/sampled_id',
-                            'spectral' if spectral else 'spatial')
-
+    mask_dir = os.path.join(data_dir, 'pdr3_output/sampled_id')
     #output_dir = os.path.join(data_dir, 'pdr3_output/'+dim+'/PNP',
-    #                          sz_str, loss + str(ratio))
-
+    #                          sz_str, loss + str(mask_ratio))
     output_dir = os.path.join(data_dir, 'pdr3_output/'+dim+'/PNP/trail/0')
 
-    model_dir = os.path.join(output_dir, 'models')
+    img_fn = os.path.join(data_dir, 'pdr3_output', dim, 'orig_imgs/celeba.jpg')
+    mask_fn = os.path.join(mask_dir, str(img_sz)+'_'+str(mask_ratio)+'.npy')
+    #img_fn = os.path.join(data_dir, 'pdr3_output', dim, 'orig_imgs/0_'+str(img_sz)+'.npy')
 
-    #mask_path = os.path.join(mask_dir, str(img_sz)+'_'+str(ratio)+'_mask.npy')
-    #img_path = os.path.join(data_dir, 'pdr3_output', dim, 'orig_imgs/0_'+str(img_sz)+'.npy')
-    img_path = os.path.join(data_dir, 'pdr3_output', dim, 'orig_imgs/celeba.jpg')
-
-    noise_sigma = 10/255
-    num_iters = 500
-    rho=1
-    sigma_0=1
-    L=0.001
-    shrinkage_param=0.01
-    prior='nlm_prox'
-    num_ratio=0.5
-    sample_intvl = num_iters // 4
-
-    b, x_true, A = load_data(img_path, output_dir, noise_sigma)
+    b, x_true, A = load_data(img_fn, mask_fn, output_dir, mask_ratio, noise_sigma)
     z, G, Gz, opt_z, scaled_lambda_, prox_op = init_model(x_true, sigma_0, L, prior)
-    train(b, z, A, sample_intvl, num_iters, opt_z, G, Gz, scaled_lambda_, shrinkage_param, rho, prox_op)
+    train(b, z, A, sample_intvl, num_iters, opt_z, G, Gz,
+          scaled_lambda_, shrinkage_param, rho, prox_op)
