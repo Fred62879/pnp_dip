@@ -181,7 +181,7 @@ def get_header(dir, sz):
     return cutout.wcs.to_header()
 
 # gt/recon, [c,h,w]
-def reconstruct(gt, recon, recon_path, loss_dir, header=None):
+def reconstruct(gt, recon, recon_path, header=None):
     sz = gt.shape[1]
     np.save(recon_path + '.npy', recon)
 
@@ -190,42 +190,19 @@ def reconstruct(gt, recon, recon_path, loss_dir, header=None):
     print('Recon stat ', round(np.min(recon), 3), round(np.median(recon), 3),
           round(np.mean(recon), 3), round(np.max(recon), 3))
 
+    # [noptions,nchls]
     losses = get_losses(gt, recon, None, [1,2,4])
-
-    for nm, loss in zip(['_mse','_psnr','_ssim'], losses):
-        fn = '0_'+str(sz)+nm+'_0.npy'
-        loss = np.expand_dims(loss, axis=0)
-        print(loss)
-        np.save(os.path.join(loss_dir, fn), loss)
 
     if header is not None:
         hdu = fits.PrimaryHDU(data=recon, header=header)
         hdu.writeto(recon_path + '.fits', overwrite=True)
 
+    return losses
+
 def calculate_ssim(gt, gen):
     rg = np.max(gt)-np.min(gt)
     return structural_similarity(gt, gen, data_range=rg)
                                  #win_size=len(org_img))
-
-def calculate_sam_spectrum(gt, gen, convert_to_degree=False):
-    numerator = np.sum(np.multiply(gt, gen))
-    denominator = np.linalg.norm(gt) * np.linalg.norm(gen)
-    val = np.clip(numerator / denominator, -1, 1)
-    sam_angles = np.arccos(val)
-    if convert_to_degree:
-        sam_angles = sam_angles * 180.0 / np.pi
-    return sam_angles
-
-# image shape should be [sz,sz,nchls]
-def calculate_sam(org_img, pred_img, convert_to_degree=False):
-    numerator = np.sum(np.multiply(pred_img, org_img), axis=2)
-    denominator = np.linalg.norm(org_img, axis=2) * np.linalg.norm(pred_img, axis=2)
-    val = np.clip(numerator / denominator, -1, 1)
-    sam_angles = np.arccos(val)
-    if convert_to_degree:
-        sam_angles = sam_angles * 180.0 / np.pi
-    return np.mean(np.nan_to_num(sam_angles))
-
 def calculate_psnr(gen, gt):
     mse = calculate_mse(gen, gt)
     mx = np.max(gt)
