@@ -86,17 +86,9 @@ def run(f_name, specific_result_dir, noise_sigma, num_iter, rho, sigma_0, shrink
         if (t + 1) % 250 == 0:
             imsave(specific_result_dir + 'iter%d_PSNR_%.2f.png' % (t, psnr_gt), results[0].cpu().numpy().transpose((1, 2, 0)))
 
-        gt = x_true.cpu().numpy()
-        recon = results.cpu().numpy()
-
-        psnr_gt = peak_signal_noise_ratio(gt, recon)
-        mse_gt = np.mean((gt - recon) ** 2)
+        psnr_gt = peak_signal_noise_ratio(x_true.cpu().numpy(), results.detach().cpu().numpy())
+        mse_gt = np.mean((x_true.cpu().numpy() - results.detach().cpu().numpy()) ** 2)
         fidelity_loss = fn(results).detach()
-
-        losses = reconstruct(gt[0], recon[0], recon_path)
-        print('mse', losses[0])
-        print('psnr', losses[1])
-        print('ssim', losses[2])
 
         record["psnr_gt"].append(psnr_gt)
         record["mse_gt"].append(mse_gt)

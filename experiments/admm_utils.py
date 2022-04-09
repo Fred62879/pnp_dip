@@ -181,10 +181,9 @@ def get_header(dir, sz):
     return cutout.wcs.to_header()
 
 # gt/recon, [c,h,w]
-def reconstruct(gt, recon, recon_path=None, header=None):
+def reconstruct(gt, recon, recon_path, header=None):
     sz = gt.shape[1]
-    if recon_path is not None:
-        np.save(recon_path + '.npy', recon)
+    np.save(recon_path + '.npy', recon)
 
     print('GT max', np.round(np.max(gt, axis=(1,2)), 3) )
     print('Recon pixl max ', np.round(np.max(recon, axis=(1,2)), 3) )
