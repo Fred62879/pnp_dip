@@ -1,56 +1,55 @@
-
 import os
-import sys
-import time
-import glob
-import math
-import torch
-import numpy as np
-
 # os.environ['CUDA_VISIBLE_DEVICES'] = '0'
 os.chdir(os.path.dirname(os.path.abspath(__file__)))
 
-from torch import optim
-from skimage.transform import resize
-from matplotlib.pyplot import imread, imsave
-from skimage.metrics import structural_similarity
+import numpy as np
+import torch
 from skimage.metrics import peak_signal_noise_ratio
+from matplotlib.pyplot import imread, imsave
+from skimage.transform import resize
+import time
+import sys
 
 sys.path.append('../')
-from models import *
+
 from admm_utils import *
+from torch import optim
+from models import *
+import math
+import glob
 
 torch.backends.cudnn.enabled = True
 torch.backends.cudnn.benchmark = True
 
+def run(f_name, specific_result_dir, noise_sigma, num_iter, rho, sigma_0, L, shrinkage_param, prior, num_ratio):
 
-def func(x):
-    return torch.norm(A(x.reshape(-1)) - b) ** 2 / 2
+    if torch.cuda.is_available():
+        dtype = torch.cuda.FloatTensor
+    else:
+        dtype = torch.FloatTensor
 
-def load_data(img_fn, mask_fn, output_dir, ratio, noise_sigma):
-    img = imread(img_fn)
+    img = imread(f_name)
     if img.dtype == 'uint8':
         img = img.astype('float32') / 255  # scale to [0, 1]
     elif img.dtype == 'float32':
         img = img.astype('float32')
     else:
         raise TypeError()
-
     img = np.clip(resize(img, (128, 128)), 0, 1) ## CHANGED
-    imsave(output_dir + '/true.png', img)
+    imsave(specific_result_dir + 'true.png', img)
     img = img.transpose((2, 0, 1))
-    print(img.shape)
     x_true = torch.from_numpy(img).unsqueeze(0).type(dtype)
 
-    A, At, A_diag = A_inpainting(mask_fn, ratio, x_true.numel(), dtype)
+    A, At, A_diag = A_inpainting(num_ratio, x_true.numel())
 
     b = A(x_true.reshape(-1, ))
-    #b = torch.clamp(b + noise_sigma * torch.randn(b.shape).type(dtype), 0, 1)
-    masked_img = At(b).reshape(1, 3, 128, 128)[0].permute((1, 2, 0)).cpu().numpy()
-    imsave(output_dir + '/corrupted.png', masked_img)
-    return b, x_true, A
+    b = torch.clamp(b + noise_sigma * torch.randn(b.shape).type(dtype), 0, 1)
+    imsave(specific_result_dir + 'corrupted.png',
+           At(b).reshape(1, 3, 128, 128)[0].permute((1, 2, 0)).cpu().numpy()) ## CHANGED
 
-def init_model(x_true, sigma_0, L, prior):
+    def fn(x):
+        return torch.norm(A(x.reshape(-1)) - b) ** 2 / 2
+
     G = skip(3, 3,
              num_channels_down=[16, 32, 64, 128, 128],
              num_channels_up=[16, 32, 64, 128, 128],  # [16, 32, 64, 128, 128],
@@ -58,10 +57,10 @@ def init_model(x_true, sigma_0, L, prior):
              filter_size_up=3, filter_size_down=3, filter_skip_size=1,
              upsample_mode='nearest',  # downsample_mode='avg',
              need1x1_up=False,
-             need_sigmoid=True, need_bias=True, pad='reflection', act_fun='LeakyReLU')\
-             .type(dtype)
-
+             need_sigmoid=True, need_bias=True, pad='reflection', act_fun='LeakyReLU').type(dtype)
     z = torch.zeros_like(x_true).type(dtype).normal_()
+
+
     x = G(z).clone().detach()
     scaled_lambda_ = torch.zeros_like(x, requires_grad=False).type(dtype)
 
@@ -75,13 +74,15 @@ def init_model(x_true, sigma_0, L, prior):
     prox_op = eval(prior)
     Gz = G(z)
 
-    return z, G, Gz, opt_z, scaled_lambda_, prox_op
+    record = {"psnr_gt": [],
+              "mse_gt": [],
+              "total_loss": [],
+              "prior_loss": [],
+              "fidelity_loss": [],
+              "cpu_time": [],
+              }
 
-
-def train(b, z, A, sample_intvl, num_iter, opt_z, G, Gz, scaled_lambda_, shrinkage_param, rho, prox_op):
     results = None
-    mses, psnrs, ssims = [], [], []
-
     for t in range(num_iter):
         # for x
         with torch.no_grad():
@@ -90,8 +91,7 @@ def train(b, z, A, sample_intvl, num_iter, opt_z, G, Gz, scaled_lambda_, shrinka
         # for z (GD)
         opt_z.zero_grad()
         Gz = G(z)
-        loss_z = torch.norm(b- A(Gz.view(-1))) ** 2 / 2 + \
-            (rho / 2) * torch.norm(x - G(z) + scaled_lambda_) ** 2
+        loss_z = torch.norm(b- A(Gz.view(-1))) ** 2 / 2 + (rho / 2) * torch.norm(x - G(z) + scaled_lambda_) ** 2
         loss_z.backward()
         opt_z.step()
 
@@ -106,72 +106,45 @@ def train(b, z, A, sample_intvl, num_iter, opt_z, G, Gz, scaled_lambda_, shrinka
         else:
             results = results * 0.99 + Gz.detach() * 0.01
 
-        if t == 0 or (t + 1) % sample_intvl == 0:
-            fidelity_loss = func(results).detach()
-            gt = x_true.cpu().numpy()[0]
-            recon = results.cpu().numpy()[0]
+        psnr_gt = peak_signal_noise_ratio(x_true.cpu().numpy(), results.cpu().numpy())
+        mse_gt = np.mean((x_true.cpu().numpy() - results.cpu().numpy()) ** 2)
+        fidelity_loss = fn(results).detach()
 
-            id = (t + 1) // sample_intvl
-            fn = os.path.join(output_dir, 'recons', str(id) + '.png')
-            imsave(fn, recon.transpose((1, 2, 0)))
+        if (t + 1) % 500 == 0:
+            imsave(specific_result_dir + 'iter%d_PSNR_%.2f.png' % (t, psnr_gt), results[0].cpu().numpy().transpose((1, 2, 0)))
 
-            print('[%d / %d] '% (t+1, num_iter))
+        record["psnr_gt"].append(psnr_gt)
+        record["mse_gt"].append(mse_gt)
+        record["fidelity_loss"].append(fidelity_loss.item())
+        record["cpu_time"].append(time.time())
 
-            if t == sample_intvl - 1:
-                metric_dir = os.path.join(output_dir, 'metrics')
-                recon_dir = os.path.join(output_dir, 'recons')
-                reconstruct(gt, recon, recon_dir, metric_dir)
+        if (t + 1) % 10 == 0:
+            print('Img %d Iteration %5d PSRN_gt: %.2f MSE_gt: %e' % (f_num, t + 1, psnr_gt, mse_gt))
+    np.savez(specific_result_dir + 'record', **record)
 
-            #mses.append(mse);psnrs.append(psnr);ssims.append(ssim)
+# torch.manual_seed(500)
+if torch.cuda.is_available():
+    dtype = torch.cuda.FloatTensor
+else:
+    dtype = torch.FloatTensor
 
-    #np.save(os.path.join(outputdir, metrics, 'mse.npy'), np.array(mses))
-    #np.save(os.path.join(outputdir, metrics, 'psnr.npy'), np.array(psnrs))
-    #np.save(os.path.join(outputdir, metrics, 'ssim.npy'), np.array(ssims))
+dataset_dir = '../../data/'
+results_dir = '../../data/results/DIP_nlm/'
 
+os.makedirs(results_dir)
+f_name_list = glob.glob('../../data/*.jpg')
 
-if __name__ == '__main__':
+for f_num, f_name in enumerate(f_name_list):
 
-    global dtype
-    if torch.cuda.is_available():
-        dtype = torch.cuda.FloatTensor
-    else:
-        dtype = torch.FloatTensor
-
-    '''
-    nfls = args.nfls      # num bands
-    ratio = float(args.ratio)    # ratio %
-    img_sz = args.imgsz
-    n_iters = args.niters
-    spectral = args.spectral
-    '''
-    img_sz = 128
-    rho = 1
-    nfls = 5
-    L = 0.001
-    sigma_0 = 1
-    num_iters = 500
-    mask_ratio = 10.0
-    spectral = False
-    prior = 'nlm_prox'
-    noise_sigma = 10/255
-    shrinkage_param = 0.01
-    sample_intvl = num_iters // 4
-
-    loss = 'l1_'
-    dim = '2d_'+ str(nfls)
-    data_dir = '../../../../data'
-    #sz_str = str(img_sz) + ('_spectra' if spectral else '')
-
-    mask_dir = os.path.join(data_dir, 'pdr3_output/sampled_id')
-    #output_dir = os.path.join(data_dir, 'pdr3_output/'+dim+'/PNP',
-    #                          sz_str, loss + str(mask_ratio))
-    output_dir = os.path.join(data_dir, 'pdr3_output/'+dim+'/PNP/trail/0')
-
-    img_fn = os.path.join(data_dir, 'pdr3_output', dim, 'orig_imgs/celeba.jpg')
-    mask_fn = os.path.join(mask_dir, str(img_sz)+'_'+str(mask_ratio)+'.npy')
-    #img_fn = os.path.join(data_dir, 'pdr3_output', dim, 'orig_imgs/0_'+str(img_sz)+'.npy')
-
-    b, x_true, A = load_data(img_fn, mask_fn, output_dir, mask_ratio, noise_sigma)
-    z, G, Gz, opt_z, scaled_lambda_, prox_op = init_model(x_true, sigma_0, L, prior)
-    train(b, z, A, sample_intvl, num_iters, opt_z, G, Gz,
-          scaled_lambda_, shrinkage_param, rho, prox_op)
+    specific_result_dir = results_dir+str(f_num)+'/'
+    os.makedirs(specific_result_dir)
+    run(f_name=f_name,
+        specific_result_dir=specific_result_dir,
+        noise_sigma=10/255,
+        num_iter=500,
+        rho=1,
+        sigma_0=1,
+        L=0.001,
+        shrinkage_param=0.01,
+        prior='nlm_prox',
+        num_ratio=0.5)
