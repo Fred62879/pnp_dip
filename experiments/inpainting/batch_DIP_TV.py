@@ -110,15 +110,22 @@ def run(f_name, specific_result_dir, noise_sigma, num_iter, rho, sigma_0, L, shr
         mse_gt = np.mean((x_true.cpu().numpy() - results.cpu().numpy()) ** 2)
         fidelity_loss = fn(results).detach()
 
-        if (t + 1) % 500 == 0:
+        if (t + 1) % 100 == 0:
             imsave(specific_result_dir + 'iter%d_PSNR_%.2f.png' % (t, psnr_gt), results[0].cpu().numpy().transpose((1, 2, 0)))
+
+            gt = x_true.cpu().numpy()
+            recon = results
+            losses = reconstruct(gt[0], recon[0])
+            print('mse', losses[0])
+            print('psnr', losses[1])
+            print('ssim', losses[2])
 
         record["psnr_gt"].append(psnr_gt)
         record["mse_gt"].append(mse_gt)
         record["fidelity_loss"].append(fidelity_loss.item())
         record["cpu_time"].append(time.time())
 
-        if (t + 1) % 10 == 0:
+        if (t + 1) % 100 == 0:
             print('Img %d Iteration %5d PSRN_gt: %.2f MSE_gt: %e' % (f_num, t + 1, psnr_gt, mse_gt))
     np.savez(specific_result_dir + 'record', **record)
 
@@ -131,17 +138,19 @@ else:
 dataset_dir = '../../data/'
 results_dir = '../../data/results/DIP_tv/'
 
-os.makedirs(results_dir)
+if not os.path.exists(results_dir):
+    os.makedirs(results_dir)
 f_name_list = glob.glob('../../data/*.jpg')
 
 for f_num, f_name in enumerate(f_name_list):
 
     specific_result_dir = results_dir+str(f_num)+'/'
-    os.makedirs(specific_result_dir)
+    if not os.path.exists(specific_result_dir):
+        os.makedirs(specific_result_dir)
     run(f_name=f_name,
         specific_result_dir=specific_result_dir,
         noise_sigma=10/255,
-        num_iter=5000,
+        num_iter=500,
         rho=1,
         sigma_0=1,
         L=0.001,

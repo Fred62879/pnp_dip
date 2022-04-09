@@ -109,6 +109,6 @@ def skip(
     if need_sigmoid:
         model.add(nn.Sigmoid())
 
-    model.add(Fn(torch.sin))
+    #model.add(Fn(torch.sinh))
 
     return model

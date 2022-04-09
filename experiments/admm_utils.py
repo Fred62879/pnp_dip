@@ -33,9 +33,11 @@ def A_inpainting(num_ratio, img_dim):
         b_[chosen_ind] = b
         return b_
     return A, At, A_diag
-'''
 
+'''
+'''
 def A_inpainting(mask_fn, ratio, img_dim, dtype):
+
     if not os.path.exists(mask_fn):
         mask = np.random.permutation(img_dim)
         np.save(mask_fn, mask)
@@ -43,13 +45,14 @@ def A_inpainting(mask_fn, ratio, img_dim, dtype):
         mask = np.load(mask_fn)
 
     num_measurements = int(img_dim * ratio//100)
+    print("Sampled:", num_measurements)
     chosen_ind = mask[:num_measurements]
 
     A_diag= torch.zeros(img_dim).type(dtype)
     A_diag[chosen_ind] = 1
 
     def A(x):  # return unmasked pixel values
-        return x[chosen_ind]
+        return (x[chosen_ind]).flatten()
 
     def At(b): # mask unselected pixels (set to 0)
         b_ = torch.zeros(img_dim, device=b.device)
@@ -57,6 +60,22 @@ def A_inpainting(mask_fn, ratio, img_dim, dtype):
         return b_
 
     return A, At, A_diag
+'''
+
+def A_inpainting(mask_fn, ratio, img_dim, dtype):
+
+    mask = np.load(mask_fn)
+    
+    #num_measurements = np.count_nonzero(mask)
+    mask = mask.astype(bool)
+
+    def A(x):  # return unmasked pixel values
+        res = x[mask]
+        #print(np.count_nonzero(mask[:,:,0]), np.count_nonzero(mask[:,:,2]))
+        #print("Sampled:", res.shape)
+        return res
+
+    return A, None, None
 
 def A_superresolution(down_ratio, img_shape):
     '''
@@ -181,9 +200,11 @@ def get_header(dir, sz):
     return cutout.wcs.to_header()
 
 # gt/recon, [c,h,w]
-def reconstruct(gt, recon, recon_path, header=None):
+def reconstruct(gt, recon, recon_path=None, header=None):
     sz = gt.shape[1]
-    np.save(recon_path + '.npy', recon)
+
+    if recon_path is not None:
+        np.save(recon_path + '.npy', recon)
 
     print('GT max', np.round(np.max(gt, axis=(1,2)), 3) )
     print('Recon pixl max ', np.round(np.max(recon, axis=(1,2)), 3) )
