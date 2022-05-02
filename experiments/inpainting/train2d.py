@@ -5,6 +5,7 @@ import time
 import glob
 import math
 import torch
+import argparse
 import numpy as np
 
 # os.environ['CUDA_VISIBLE_DEVICES'] = '0'
@@ -29,11 +30,12 @@ def func(A, b, x):
 
 def run(f_name, mask_fn, img_sz, noise_sigma, num_iter, rho, sigma_0, L, shrinkage_param,
         prior, sample_ratio, nchls, sample_intvl, recon_dir, metric_dir):
-
+    
     img = np.load(f_name)
+    nchls = img.shape[0]
     x_true = torch.from_numpy(img).unsqueeze(0).type(dtype) # [nb,nchls,sz,sz]
     #A, At, A_diag = A_inpainting(num_ratio, x_true.numel())
-    A, At, A_diag = A_inpainting(mask_fn, sample_ratio, img_sz**2, dtype)
+    A, At, A_diag = A_inpainting(mask_fn, sample_ratio, img_sz**2, nchls, dtype)
     b = A((x_true[0]).permute(1,2,0))
 
     # model
@@ -117,24 +119,35 @@ if __name__ == '__main__':
         dtype = torch.FloatTensor
 
     rho = 1
-    nfls = 5
     L = 0.001
     sigma_0 = 1
-    img_sz = 512
-    num_iters = 500
-    sample_ratio = 0.0
-    spectral = True
+    num_iters = 4000
     prior = 'nlm_prox'
     noise_sigma = 10/255
     shrinkage_param = 0.01
     sample_intvl = num_iters // 4
+    ratios = [0.0, 0.01, 0.1, 1.0, 5.0, 10.0, 20.0, 50.0, 80.0, 100.0]
 
+    parser = argparse.ArgumentParser()
+
+    parser.add_argument('--nfls', type=int, default=5)
+    parser.add_argument('--imgsz', type=int, default=64)
+    parser.add_argument('--ratiocho', type=int, default=0)
+    parser.add_argument('--spectral', action='store_true')
+
+    args = parser.parse_args()
+
+    nfls = args.nfls
+    img_sz = args.imgsz
+    spectral = args.spectral
+    sample_ratio = ratios[args.ratiocho]
+    
     loss = 'l1_'
     dim = '2d_'+ str(nfls)
     data_dir = '../../../../data'
-    sz_str = str(img_sz) + ('_spectra' if spectral else '')
+    sz_str = str(img_sz) + ('_spectral' if spectral else '')
 
-    mask_dir = os.path.join(data_dir, 'pdr3_output/sampled_id/' + ('spectral' if spectral else 'spatial'))
+    mask_dir = os.path.join(data_dir, 'pdr3_output/sampled_id/' + ('spectral0' if spectral else 'spatial'))
     output_dir = os.path.join(data_dir, 'pdr3_output/'+dim+'/PNP',
                               sz_str, loss + str(sample_ratio))
 
@@ -144,6 +157,8 @@ if __name__ == '__main__':
     mask_fn = os.path.join(mask_dir, str(img_sz)+'_'+str(sample_ratio)+'_mask.npy')
     img_fn = os.path.join(data_dir, 'pdr3_output', dim, 'orig_imgs/0_'+str(img_sz)+'.npy')
 
+    start = time.time()
     run(img_fn, mask_fn, img_sz, noise_sigma, num_iters, rho, sigma_0, L,
         shrinkage_param, prior, sample_ratio,
         nfls, sample_intvl, recon_dir, metric_dir)
+    print("Duration ", time.time() - start)

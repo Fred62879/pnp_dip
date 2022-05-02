@@ -62,9 +62,9 @@ def A_inpainting(mask_fn, ratio, img_dim, dtype):
     return A, At, A_diag
 '''
 
-def A_inpainting(mask_fn, ratio, img_dim, dtype):
+def A_inpainting(mask_fn, ratio, img_dim, nchls, dtype):
 
-    mask = np.load(mask_fn)
+    mask = np.load(mask_fn)[:,:,:nchls]
     
     #num_measurements = np.count_nonzero(mask)
     mask = mask.astype(bool)
