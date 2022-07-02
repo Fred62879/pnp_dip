@@ -87,19 +87,17 @@ def run(f_name, mask_fn, img_sz, noise_sigma, num_iter, rho, sigma_0, L, shrinka
             results = Gz.detach()
         else:
             results = results * 0.99 + Gz.detach() * 0.01
-
+            
         if (t + 1) % sample_intvl == 0 or t == 0:
             gt = x_true.cpu().numpy()
             recon = results.cpu().numpy()
 
-            print('[Iteration/Total  %d/%d] ' % (t + 1, num_iter))
-
             id = (t + 1) // sample_intvl
             recon_path = os.path.join(recon_dir, str(id))
             losses = reconstruct(gt[0], recon[0], recon_path)
-            print('mse', losses[0])
-            print('psnr', losses[1])
-            print('ssim', losses[2])
+
+            #print(losses[0], losses[1], losses[2])
+            print('[Iteration/Total] [%d/%d]' % (t + 1, num_iter))
 
             mses.append(losses[0]);psnrs.append(losses[1]);ssims.append(losses[2])
 
@@ -132,6 +130,7 @@ if __name__ == '__main__':
 
     parser.add_argument('--nfls', type=int, default=5)
     parser.add_argument('--imgsz', type=int, default=64)
+    parser.add_argument('--inptcho', type=int, default=0)
     parser.add_argument('--ratiocho', type=int, default=0)
     parser.add_argument('--spectral', action='store_true')
 
@@ -140,16 +139,31 @@ if __name__ == '__main__':
     nfls = args.nfls
     img_sz = args.imgsz
     spectral = args.spectral
+    inptcho = args.inptcho
     sample_ratio = ratios[args.ratiocho]
     
     loss = 'l1_'
+    sz_str = str(img_sz)
     dim = '2d_'+ str(nfls)
     data_dir = '../../../../data'
-    sz_str = str(img_sz) + ('_spectral' if spectral else '')
 
-    mask_dir = os.path.join(data_dir, 'pdr3_output/sampled_id/' + ('spectral0' if spectral else 'spatial'))
+    if spectral:
+        if inptcho == 1:
+            mask_str = 'spectral1'
+            sz_str += '_spectral1'
+        elif inptcho == 2:
+            mask_str = 'spectral2'
+            sz_str += '_spectral2'
+        else:
+            raise('Invalid inpainting choice')
+    else:
+        mask_str = 'spatial'
+
+    mask_dir = os.path.join(data_dir, 'pdr3_output/sampled_id/' + mask_str)
     output_dir = os.path.join(data_dir, 'pdr3_output/'+dim+'/PNP',
                               sz_str, loss + str(sample_ratio))
+    print('Mask dir', mask_dir)
+    print('Output dir', output_dir)
 
     recon_dir = os.path.join(output_dir, 'recons')
     metric_dir = os.path.join(output_dir, 'metrics')
@@ -162,3 +176,4 @@ if __name__ == '__main__':
         shrinkage_param, prior, sample_ratio,
         nfls, sample_intvl, recon_dir, metric_dir)
     print("Duration ", time.time() - start)
+    print()

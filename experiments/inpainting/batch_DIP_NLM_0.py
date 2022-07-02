@@ -201,7 +201,7 @@ if __name__ == '__main__':
     '''
     img_sz = 128
     rho = 1
-    nfls = 5
+    nfls = 10
     L = 0.001
     sigma_0 = 1
     num_iters = 500
@@ -218,7 +218,7 @@ if __name__ == '__main__':
     #sz_str = str(img_sz) + ('_spectra' if spectral else '')
 
     mask_dir = os.path.join(data_dir, 'pdr3_output/sampled_id')
-    output_dir = os.path.join(data_dir, 'pdr3_output/'+dim+'/PNP/trail/0')
+    output_dir = os.path.join(data_dir, 'pdr3_output/'+dim+'/PNP/'+str(img_sz)+'/l1_'+str(mask_ratio))
     recon_dir = os.path.join(output_dir, 'recons')
     metric_dir = os.path.join(output_dir, 'metrics')
 

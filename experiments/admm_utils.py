@@ -33,7 +33,6 @@ def A_inpainting(num_ratio, img_dim):
         b_[chosen_ind] = b
         return b_
     return A, At, A_diag
-
 '''
 '''
 def A_inpainting(mask_fn, ratio, img_dim, dtype):
@@ -62,11 +61,17 @@ def A_inpainting(mask_fn, ratio, img_dim, dtype):
     return A, At, A_diag
 '''
 
+# train2d.py
 def A_inpainting(mask_fn, ratio, img_dim, nchls, dtype):
 
-    mask = np.load(mask_fn)[:,:,:nchls]
-    
-    #num_measurements = np.count_nonzero(mask)
+    mask = np.load(mask_fn)[...,:nchls]
+    if mask.ndim == 2: # [npixls,nchls]
+        img_sz = int(np.sqrt(img_dim))
+        mask = mask.reshape(img_sz, img_sz, nchls)
+
+    print('Mask shape ', mask.shape)
+    print([np.count_nonzero(mask[:,:,i]) for i in range(mask.shape[-1])])
+
     mask = mask.astype(bool)
 
     def A(x):  # return unmasked pixel values
@@ -206,10 +211,10 @@ def reconstruct(gt, recon, recon_path=None, header=None):
     if recon_path is not None:
         np.save(recon_path + '.npy', recon)
 
-    print('GT max', np.round(np.max(gt, axis=(1,2)), 3) )
-    print('Recon pixl max ', np.round(np.max(recon, axis=(1,2)), 3) )
-    print('Recon stat ', round(np.min(recon), 3), round(np.median(recon), 3),
-          round(np.mean(recon), 3), round(np.max(recon), 3))
+    #print('GT max', np.round(np.max(gt, axis=(1,2)), 3) )
+    #print('Recon pixl max ', np.round(np.max(recon, axis=(1,2)), 3) )
+    #print('Recon stat ', round(np.min(recon), 3), round(np.median(recon), 3),
+    #      round(np.mean(recon), 3), round(np.max(recon), 3))
 
     # [noptions,nchls]
     losses = get_losses(gt, recon, None, [1,2,4])

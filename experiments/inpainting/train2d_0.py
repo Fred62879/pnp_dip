@@ -28,8 +28,9 @@ def func(x):
     return torch.norm(A(x.reshape(-1)) - b) ** 2 / 2
 
 def load_data(img_fn, mask_fn, output_dir, ratio, noise_sigma):
-    #img = np.load(img_fn) # [nchls,nr,nc]
+    img = np.load(img_fn) # [nchls,nr,nc]
 
+    '''
     # start
     img = imread(img_fn)
     if img.dtype == 'uint8':
@@ -43,6 +44,7 @@ def load_data(img_fn, mask_fn, output_dir, ratio, noise_sigma):
     imsave(output_dir + '/true.png', img)
     img = img.transpose((2, 0, 1))
     # end
+    '''
 
     x_true = torch.from_numpy(img).unsqueeze(0).type(dtype)
 
@@ -187,8 +189,8 @@ if __name__ == '__main__':
     recon_dir = os.path.join(output_dir, 'recons')
     metric_dir = os.path.join(output_dir, 'metrics')
     mask_fn = os.path.join(mask_dir, str(img_sz)+'_'+str(mask_ratio)+'.npy')
-    #img_fn = os.path.join(data_dir, 'pdr3_output', dim, 'orig_imgs/0_'+str(img_sz)+'.npy')
-    img_fn = os.path.join(data_dir, 'pdr3_output', dim, 'orig_imgs/celeba.jpg')
+    img_fn = os.path.join(data_dir, 'pdr3_output', dim, 'orig_imgs/0_'+str(img_sz)+'.npy')
+    #img_fn = os.path.join(data_dir, 'pdr3_output', dim, 'orig_imgs/celeba.jpg')
 
     b, x_true, A = load_data(img_fn, mask_fn, output_dir, mask_ratio, noise_sigma)
 
