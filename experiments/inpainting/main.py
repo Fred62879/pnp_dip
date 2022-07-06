@@ -7,11 +7,13 @@ import math
 import torch
 import argparse
 import numpy as np
+import configargparse
 
 # os.environ['CUDA_VISIBLE_DEVICES'] = '0'
 os.chdir(os.path.dirname(os.path.abspath(__file__)))
 
 from torch import optim
+from parser import parse_args
 from skimage.transform import resize
 from matplotlib.pyplot import imread, imsave
 from skimage.metrics import structural_similarity
@@ -28,25 +30,23 @@ torch.backends.cudnn.benchmark = True
 def func(A, b, x):
     return torch.norm(A(x.reshape(-1)) - b) ** 2 / 2
 
-def run(f_name, mask_fn, img_sz, noise_sigma, num_iter, rho, sigma_0, L, shrinkage_param,
-        prior, sample_ratio, nchls, sample_intvl, recon_dir, metric_dir):
+def run(img_fn, mask_fn, img_sz, noise_sigma, num_iter, rho, sigma_0, L, shrinkage_param,
+        prior, sample_ratio, nchls, sample_intvl, recon_dir, metric_dir, dtype):
 
-    img = np.load(f_name)
+    img = np.load(img_fn)
     nchls = img.shape[0]
     x_true = torch.from_numpy(img).unsqueeze(0).type(dtype) # [nb,nchls,sz,sz]
-    #A, At, A_diag = A_inpainting(num_ratio, x_true.numel())
     A, At, A_diag = A_inpainting(mask_fn, sample_ratio, img_sz**2, nchls, dtype)
     b = A((x_true[0]).permute(1,2,0))
 
     # model
-    G = skip(nchls, nchls,
-             num_channels_down=[16, 32, 64, 128, 128],
+    G = skip(nchls, nchls, num_channels_down=[16, 32, 64, 128, 128],
              num_channels_up=[16, 32, 64, 128, 128],  # [16, 32, 64, 128, 128],
              num_channels_skip=[0, 0, 0, 0, 0],
              filter_size_up=3, filter_size_down=3, filter_skip_size=1,
              upsample_mode='nearest',  # downsample_mode='avg',
-             need1x1_up=False,
-             need_sigmoid=False, need_bias=True, pad='reflection', act_fun='LeakyReLU').type(dtype)
+             need1x1_up=False, need_sigmoid=False, need_bias=True,
+             pad='reflection', act_fun='LeakyReLU').type(dtype)
 
     z = torch.zeros_like(x_true).type(dtype).normal_()
     x = G(z).clone().detach()
@@ -107,73 +107,20 @@ def run(f_name, mask_fn, img_sz, noise_sigma, num_iter, rho, sigma_0, L, shrinka
 
 
 if __name__ == '__main__':
-
-    #torch.manual_seed(500)
-
-    global dtype
-    if torch.cuda.is_available():
-        dtype = torch.cuda.FloatTensor
-    else:
-        dtype = torch.FloatTensor
+    parser = configargparse.ArgumentParser()
+    config = parse_args(parser)
+    args = argparse.Namespace(**config)
 
     rho = 1
-    L = 0.001
     sigma_0 = 1
     num_iters = 4000
     prior = 'nlm_prox'
     noise_sigma = 10/255
     shrinkage_param = 0.01
-    sample_intvl = num_iters // 4
-    ratios = [0.0, 0.01, 0.1, 1.0, 5.0, 10.0, 20.0, 50.0, 80.0, 100.0]
-
-    parser = argparse.ArgumentParser()
-
-    parser.add_argument('--nfls', type=int, default=5)
-    parser.add_argument('--imgsz', type=int, default=64)
-    parser.add_argument('--inptcho', type=int, default=0)
-    parser.add_argument('--ratiocho', type=int, default=0)
-    parser.add_argument('--spectral', action='store_true')
-
-    args = parser.parse_args()
-
-    nfls = args.nfls
-    img_sz = args.imgsz
-    spectral = args.spectral
-    inptcho = args.inptcho
-    sample_ratio = ratios[args.ratiocho]
-
-    loss = 'l1_'
-    sz_str = str(img_sz)
-    dim = '2d_'+ str(nfls)
-    data_dir = '../../../../data'
-
-    if spectral:
-        if inptcho == 1:
-            mask_str = 'spectral1'
-            sz_str += '_spectral1'
-        elif inptcho == 2:
-            mask_str = 'spectral2'
-            sz_str += '_spectral2'
-        else:
-            raise('Invalid inpainting choice')
-    else:
-        mask_str = 'spatial'
-
-    mask_dir = os.path.join(data_dir, 'pdr3_output/sampled_id/' + mask_str)
-    output_dir = os.path.join(data_dir, 'pdr3_output/'+dim+'/PNP',
-                              sz_str, loss + str(sample_ratio))
-    print('Mask dir', mask_dir)
-    print('Output dir', output_dir)
-
-    recon_dir = os.path.join(output_dir, 'recons')
-    metric_dir = os.path.join(output_dir, 'metrics')
-    #mask_fn = os.path.join(mask_dir, str(img_sz)+'_'+str(sample_ratio)+'.npy')
-    mask_fn = os.path.join(mask_dir, str(img_sz)+'_'+str(sample_ratio)+'_mask.npy')
-    img_fn = os.path.join(data_dir, 'pdr3_output', dim, 'orig_imgs/0_'+str(img_sz)+'.npy')
 
     start = time.time()
-    run(img_fn, mask_fn, img_sz, noise_sigma, num_iters, rho, sigma_0, L,
-        shrinkage_param, prior, sample_ratio,
-        nfls, sample_intvl, recon_dir, metric_dir)
+    run(args.gt_img_fn, args.sampled_pixl_id_fn, args.img_sz, noise_sigma, args.num_epochs,
+        rho, sigma_0, args.lr, shrinkage_param, prior, args.sample_ratio, args.num_bands,
+        args.model_smpl_intvl, args.recon_dir, args.metric_dir, args.float_tensor)
     print("Duration ", time.time() - start)
     print()
