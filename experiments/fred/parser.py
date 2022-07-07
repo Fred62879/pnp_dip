@@ -10,6 +10,10 @@ from os.path import join, exists
 def add_cmd_line_args(parser):
     parser.add('-c', '--config', required=False, is_config_file=True)
 
+    parser.add_argument('--model', type=str, default='pnp_dip')
+    parser.add_argument('--submodel', type=str, required=True)
+    parser.add_argument('--astro', action='store_true',default=False)
+
     parser.add_argument('--dr', type=str, default='pdr3')
     parser.add_argument('--data_dir', type=str, default='../../../data/astro')
 
@@ -22,6 +26,8 @@ def add_cmd_line_args(parser):
     parser.add_argument('--experiment_id', type=str, default='exp_dum')
 
     # img args
+    parser.add_argument('--normal_img_id', type=str, default='1')
+
     parser.add_argument('--sensors_full_name', nargs='+', required=True)
     parser.add_argument('--sensor_collection_name', type=str, required=True)
 
@@ -54,50 +60,48 @@ def add_cmd_line_args(parser):
 
 
 def add_input_paths(config):
-    dr = config['dr']
-    img_id = config['img_id']
     data_dir = config['data_dir']
 
-    dim = str(config['dim'])
-    img_sz = str(config['img_sz'])
-    start_r = str(config['start_r'])
-    start_c = str(config['start_c'])
-    num_bands = str(config['num_bands'])
-    sensor_col_nm = config['sensor_collection_name']
-    suffx = img_id +'_'+ img_sz +'_'+ start_r +'_'+ start_c + '.npy'
+    if config['astro']:
+        dr = config['dr']
+        img_id = config['img_id']
 
-    input_dir = join(data_dir, dr +'_input')
-    img_data_dir = join(input_dir, sensor_col_nm, 'img_data')
-    mask_dir = join(input_dir, 'sampled_pixl_ids',
-                    'cutout_' + suffx[:-4] +
-                    '_mask_' + str(config['mask_band_cho']) +'_'
-                    + str(config['inpaint_cho']) + '_'
-                    + str(config['mask_cho']) + '_'
-                    + str(config['mask_seed']))
+        dim = str(config['dim'])
+        img_sz = str(config['img_sz'])
+        start_r = str(config['start_r'])
+        start_c = str(config['start_c'])
+        num_bands = str(config['num_bands'])
+        sensor_col_nm = config['sensor_collection_name']
+        suffx = img_id +'_'+ img_sz +'_'+ start_r +'_'+ start_c + '.npy'
 
-    for path in [input_dir, mask_dir, img_data_dir]:
-        Path(path).mkdir(parents=True, exist_ok=True)
+        input_dir = join(data_dir, dr +'_input')
+        img_data_dir = join(input_dir, sensor_col_nm, 'img_data')
+        mask_dir = join(input_dir, 'sampled_pixl_ids',
+                        'cutout_' + suffx[:-4] +
+                        '_mask_' + str(config['mask_band_cho']) +'_'
+                        + str(config['inpaint_cho']) + '_'
+                        + str(config['mask_cho']) + '_'
+                        + str(config['mask_seed']))
 
-    config['data_dir'] = data_dir
-    config['mask_dir'] = mask_dir
-    config['input_dir'] = input_dir
-    config['dud_dir'] = join(input_dir, dr+'_dud')
-    config['gt_img_fn'] = join(img_data_dir, 'gt_img_'+ suffx)
+        for path in [input_dir, mask_dir, img_data_dir]:
+            Path(path).mkdir(parents=True, exist_ok=True)
+
+        config['data_dir'] = data_dir
+        config['mask_dir'] = mask_dir
+        config['input_dir'] = input_dir
+        config['dud_dir'] = join(input_dir, dr+'_dud')
+        config['gt_img_fn'] = join(img_data_dir, 'gt_img_'+ suffx)
+
+    else:
+        input_dir = join(data_dir, 'normal_input')
+        Path(input_dir).mkdir(parents=True, exist_ok=True)
+        config['gt_img_fn'] = join(input_dir, 'gt_img',
+                                   config['normal_img_id'] + '.jpg')
 
 def add_train_infer_args(config):
-    num_bands = config['num_bands']
     num_epochs = config['num_epochs']
-    num_pixls = config['img_sz']**2
 
-    # train and infer args
-    if config['inpaint_cho'] == 1: # spatial inpainting
-        config['npixls'] = int(num_pixls * config['sample_ratio'])
-        config['num_train_pixls'] = int(num_pixls * config['sample_ratio'])
-    else:
-        config['npixls'] = num_pixls
-        config['num_train_pixls'] = int(num_pixls)
-
-    model_smpl_intvl = max(1,num_epochs//10)
+    model_smpl_intvl = max(1, num_epochs//10)
     config['model_smpl_intvl'] = model_smpl_intvl
 
     config['cuda'] = torch.cuda.is_available()
@@ -109,6 +113,20 @@ def add_train_infer_args(config):
         config['device'] =  torch.device('cpu')
         config['float_tensor'] = torch.FloatTensor
         config['double_tensor'] = torch.DoubleTensor
+
+    if not config['astro']:
+        return
+
+    num_bands = config['num_bands']
+    num_pixls = config['img_sz']**2
+
+    # train and infer args
+    if config['inpaint_cho'] == 1: # spatial inpainting
+        config['npixls'] = int(num_pixls * config['sample_ratio'])
+        config['num_train_pixls'] = int(num_pixls * config['sample_ratio'])
+    else:
+        config['npixls'] = num_pixls
+        config['num_train_pixls'] = int(num_pixls)
 
     # multi-band image recon args
     config['loss_options'] = [1,2,4]
@@ -129,29 +147,48 @@ def add_train_infer_args(config):
         config['train_bands'] = [int(i) for i in tb]
 
 def add_output_paths(config):
-    output_dir = join\
-        (config['data_dir'], 'pnp' +'_output',
-         config['sensor_collection_name'],
-         'trail_'+ config['trail_id'], config['experiment_id'])
+    if config['astro']:
+        output_dir = join\
+            (config['data_dir'], config['dr'] +'_output',
+             config['model'] + '_output',
+             config['sensor_collection_name'],
+             'trail_'+ config['trail_id'], config['experiment_id'])
 
-    Path(output_dir).mkdir(parents=True, exist_ok=True)
-    if config['verbose']:
-        print('--- output dir', output_dir)
+        Path(output_dir).mkdir(parents=True, exist_ok=True)
+        if config['verbose']:
+            print('--- output dir', output_dir)
 
-    for path_nm, folder_nm, in zip\
-        (['recon_dir','metric_dir'], ['recons','metrics']):
-        path = join(output_dir, folder_nm)
-        config[path_nm] = path
-        Path(path).mkdir(parents=True, exist_ok=True)
+        for path_nm, folder_nm, in zip\
+            (['recon_dir','metric_dir'], ['recons','metrics']):
+            path = join(output_dir, folder_nm)
+            config[path_nm] = path
+            Path(path).mkdir(parents=True, exist_ok=True)
 
-    if config['mask_cho'] != 2:
-        mask_str = '_' + str(float(100 * config['sample_ratio']))
-    else:
-        mask_str = '_' + str(config['m_start_r'])+'_' +\
-            str(config['m_start_c'])+'_'+str(config['mask_sz'])
+        if config['mask_cho'] != 2:
+            mask_str = '_' + str(float(100 * config['sample_ratio']))
+        else:
+            mask_str = '_' + str(config['m_start_r'])+'_' +\
+                str(config['m_start_c'])+'_'+str(config['mask_sz'])
 
-    config['sampled_pixl_id_fn'] = join\
-        (config['mask_dir'], str(config['img_sz']) + mask_str + '.npy')
+        config['sampled_pixl_id_fn'] = join\
+            (config['mask_dir'], str(config['img_sz']) + mask_str + '.npy')
+
+    else: # normal image training
+        output_dir = join\
+            (config['data_dir'], 'normal_output',
+             config['model'] + '_output',
+             'trail_'+ config['trail_id'], config['experiment_id'])
+
+        Path(output_dir).mkdir(parents=True, exist_ok=True)
+        if config['verbose']:
+            print('--- output dir', output_dir)
+
+        for path_nm, folder_nm, in zip\
+            (['recon_dir','metric_dir'], ['recons','metrics']):
+            path = join(output_dir, folder_nm)
+            config[path_nm] = path
+            Path(path).mkdir(parents=True, exist_ok=True)
+
 
 ''' redefine some args'''
 def process_config(config):
@@ -175,7 +212,8 @@ def process_config(config):
 def parse_args(parser):
     print('=== Parsing')
     config = add_cmd_line_args(parser)
-    process_config(config)
+    if config['astro']:
+        process_config(config)
     add_input_paths(config)
     add_train_infer_args(config)
     add_output_paths(config)

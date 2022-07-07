@@ -1,30 +1,32 @@
 
-import os
-import sys
+#import os
+#import sys
 import time
-import glob
-import math
-import torch
+#import glob
+#import math
+#import torch
 import argparse
-import numpy as np
+#import numpy as np
 import configargparse
 
 # os.environ['CUDA_VISIBLE_DEVICES'] = '0'
-os.chdir(os.path.dirname(os.path.abspath(__file__)))
+#os.chdir(os.path.dirname(os.path.abspath(__file__)))
 
-from torch import optim
+#from torch import optim
 from parser import parse_args
-from skimage.transform import resize
-from matplotlib.pyplot import imread, imsave
-from skimage.metrics import structural_similarity
-from skimage.metrics import peak_signal_noise_ratio
+#from skimage.transform import resize
+#from matplotlib.pyplot import imread, imsave
+#from skimage.metrics import structural_similarity
+#from skimage.metrics import peak_signal_noise_ratio
 
-sys.path.append('../')
-from models import *
-from admm_utils import *
+from batch_DIP import run as run_dip
+from batch_DIP_TV import run as run_diptv
+from batch_DIP_NLM import run as run_dipnlm
+from batch_DIP_BM3D import run as run_dipbm3d
 
-torch.backends.cudnn.enabled = True
-torch.backends.cudnn.benchmark = True
+#sys.path.append('../')
+#from models import *
+#from admm_utils import *
 
 
 def func(A, b, x):
@@ -88,22 +90,12 @@ def run(img_fn, mask_fn, img_sz, noise_sigma, num_iter, rho, sigma_0, L, shrinka
         else:
             results = results * 0.99 + Gz.detach() * 0.01
 
-        if (t + 1) % sample_intvl == 0 or t == 0:
-            gt = x_true.cpu().numpy()
-            recon = results.cpu().numpy()
+        #if (t + 1) % sample_intvl == 0 or t == 0:
 
-            id = (t + 1) // sample_intvl
-            recon_path = os.path.join(recon_dir, str(id))
-            losses = reconstruct(gt[0], recon[0], recon_path)
-
-            #print(losses[0], losses[1], losses[2])
-            print('[Iteration/Total] [%d/%d]' % (t + 1, num_iter))
-
-            mses.append(losses[0]);psnrs.append(losses[1]);ssims.append(losses[2])
-
-    np.save(os.path.join(metric_dir, 'mse.npy'), np.array(mses))
-    np.save(os.path.join(metric_dir, 'psnr.npy'), np.array(psnrs))
-    np.save(os.path.join(metric_dir, 'ssim.npy'), np.array(ssims))
+    if astro:
+        np.save(os.path.join(metric_dir, 'mse.npy'), np.array(mses))
+        np.save(os.path.join(metric_dir, 'psnr.npy'), np.array(psnrs))
+        np.save(os.path.join(metric_dir, 'ssim.npy'), np.array(ssims))
 
 
 if __name__ == '__main__':
@@ -111,16 +103,28 @@ if __name__ == '__main__':
     config = parse_args(parser)
     args = argparse.Namespace(**config)
 
+    '''
     rho = 1
     sigma_0 = 1
     num_iters = 4000
     prior = 'nlm_prox'
     noise_sigma = 10/255
     shrinkage_param = 0.01
+    run(args.gt_img_fn, args.sampled_pixl_id_fn, args.img_sz, noise_sigma, args.num_epochs, rho, sigma_0, args.lr, shrinkage_param, prior, args.sample_ratio, args.num_bands, args.model_smpl_intvl, args.recon_dir, args.metric_dir, args.float_tensor)
+    '''
 
     start = time.time()
-    run(args.gt_img_fn, args.sampled_pixl_id_fn, args.img_sz, noise_sigma, args.num_epochs,
-        rho, sigma_0, args.lr, shrinkage_param, prior, args.sample_ratio, args.num_bands,
-        args.model_smpl_intvl, args.recon_dir, args.metric_dir, args.float_tensor)
+
+    if args.submodel == 'DIP':
+        run_dip(args, noise_sigma = 10/255)
+    elif args.submodel == 'DIP-TV':
+        run_diptv(args, noise_sigma=10/255, rho=1, sigma_0=1, shrinkage_param=0.01, prior='tv_prox')
+    elif args.submodel == 'DIP-NLM':
+        run_dipnlm(args, noise_sigma=10/255, rho=1, sigma_0=1, shrinkage_param=0.01, prior='nlm_prox') # nlm=0.01
+    elif args.submodel == 'DIP-BM3D':
+        run_dipbm3d(args, noise_sigma=10/255, rho=1, sigma_0=1, shrinkage_param=0.05, prior='bm3d_prox')
+    else:
+        raise Exception('Unsupported submodel')
+
     print("Duration ", time.time() - start)
     print()
