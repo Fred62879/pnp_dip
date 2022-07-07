@@ -3,7 +3,7 @@ from skimage.restoration import denoise_tv_chambolle
 import numpy as np
 import math
 import bm3d
-#import prox_tv
+import prox_tv
 from matplotlib.pyplot import imread, imsave
 from skimage.restoration import denoise_nl_means, estimate_sigma
 

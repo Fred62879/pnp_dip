@@ -194,12 +194,6 @@ def add_output_paths(config):
 def process_config(config):
     config['num_bands'] = len(config['sensors_full_name'])
 
-    # redefine experiment id if para_nms specified
-    if config['para_nms'] is not None:
-        config['experiment_id'] = [
-            str(config[para_nm]) + '_' for para_nm in config['para_nms']
-        ][:-1]
-
     # define img id
     config['img_id'] = config['footprint'] + config['tile_id'] + config['subtile_id']
 
@@ -207,6 +201,14 @@ def process_config(config):
     if config['inpaint_cho'] != 0 and config['sample_ratio_cho'] is not None:
         ratios = [0, 0.0001, 0.001, 0.005, 0.01, 0.05, 0.1, 0.2, 0.5, 0.8, 1.0]
         config['sample_ratio'] = ratios[config['sample_ratio_cho']]
+
+    # redefine experiment id if para_nms specified
+    if config['para_nms'] is not None:
+        eid = ''
+        for para_nm in config['para_nms']:
+            eid += str(config[para_nm]) + '_'
+        config['experiment_id'] = eid[:-1]
+
 
 ''' parse all command arguments and generate all needed ones '''
 def parse_args(parser):

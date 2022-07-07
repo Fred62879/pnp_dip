@@ -1,12 +1,17 @@
 
-import bm3d
+#import bm3d
 import math
 import torch
 #import prox_tv
 import numpy as np
 
+from os.path import join
+from astropy.io import fits
+from astropy.wcs import WCS
+from astropy.nddata import Cutout2D
 from skimage.transform import resize
 from matplotlib.pyplot import imread, imsave
+from skimage.metrics import structural_similarity
 from skimage.metrics import peak_signal_noise_ratio
 from skimage.restoration import denoise_tv_chambolle
 from skimage.restoration import denoise_nl_means, estimate_sigma
@@ -43,9 +48,9 @@ def load_data(G, noise_sigma, args):
 
     if args.astro:
         A, At, A_diag = A_inpainting_astro\
-            (args.mask_fn, args.img_sz, args.num_bands)
-        b = A((x_true[0]).permute(1,2,0))
-        return num_channels, x_true, A, At, A_diag, b, z
+            (args.sampled_pixl_id_fn, args.img_sz, args.num_bands)
+        b = A((x_true[0]).permute(1,2,0)) # [sz,sz,nchls]
+        return num_channels, x_true, A, At, A_diag, b, x, z, scaled_lambda_
 
     A, At, A_diag = A_inpainting_normal(args.sample_ratio, x_true.numel())
     b = A(x_true.reshape(-1,))
@@ -74,6 +79,7 @@ def A_inpainting_astro(mask_fn, img_sz, num_bands):
 
     mask = mask.astype(bool)
 
+    # x [sz,sz,nchls]
     def A(x): # return unmasked pixel values
         res = x[mask]
         return res
@@ -165,7 +171,8 @@ def bm3d_prox(input, lamda):
 def nlm_prox(input, lamda):
     numpy_input = input.detach().cpu().numpy()
     numpy_input = numpy_input[0].transpose((1,2,0))
-    result = denoise_nl_means(numpy_input, multichannel=True, sigma=lamda, patch_distance=2, h=0.05)
+    multichannel = numpy_input.shape[-1] != 1
+    result = denoise_nl_means(numpy_input, multichannel=multichannel, sigma=lamda, patch_distance=2, h=0.05)
     result = result.transpose((2,0,1))[np.newaxis]
     return input.new(result)
 
@@ -214,7 +221,7 @@ def linf_prox_x_b(x, b, shrinkage_param):
 
 ### reconstruction
 def get_header(dir, sz):
-    hdu = fits.open(os.path.join(dir, 'pdr3_dud/calexp-HSC-G-9813-0%2C0.fits'))[1]
+    hdu = fits.open(join(dir, 'pdr3_dud/calexp-HSC-G-9813-0%2C0.fits'))[1]
     header = hdu.header
     cutout = Cutout2D(hdu.data, position=(sz//2, sz//2),
                       size=sz, wcs=WCS(header))
@@ -223,11 +230,11 @@ def get_header(dir, sz):
 def reconstruct(epoch, gt, recon, num_channels, args):
     if args.astro:
         id = (epoch + 1) // args.model_smpl_intvl
-        recon_path = os.path.join(args.recon_dir, str(id))
+        recon_path = join(args.recon_dir, str(id))
         (mse, psnr, ssim) = reconstruct_(gt[0], recon[0], recon_path)
 
         print('[Epoch/Total] [%d/%d] [MSE %.3f] [PSNR %.2f] [SSIM %.3f]'
-              % (epoch + 1, args.num_epochs, mse, psnr, ssim))
+              % (epoch + 1, args.num_epochs, mse[0], psnr[0], ssim[0]))
         return [mse, psnr, ssim]
 
     else:
@@ -236,10 +243,10 @@ def reconstruct(epoch, gt, recon, num_channels, args):
         #fidelity_loss = fn(results).detach()
 
         if num_channels == 3:
-            imsave(args.recon_dir, 'iter%d_PSNR_%.2f.png'%(epoch, psnr_gt),
+            imsave(join(args.recon_dir, 'iter%d_PSNR_%.2f.png'%(epoch, psnr_gt)),
                    recon[0].transpose((1,2,0)))
         else:
-            imsave(args.recon_dir, 'iter%d_PSNR_%.2f.png'%(epoch, psnr_gt),
+            imsave(join(args.recon_dir, 'iter%d_PSNR_%.2f.png'%(epoch, psnr_gt)),
                    recon[0,0], cmap='gray')
 
         #record["psnr_gt"].append(psnr_gt)

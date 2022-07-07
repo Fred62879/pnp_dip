@@ -109,7 +109,7 @@ def run(f_name, specific_result_dir, noise_sigma, num_iter, num_ratio, GD_lr):
         record["mse_gt"].append(mse_gt)
         record["fidelity_loss"].append(fidelity_loss.item())
         record["cpu_time"].append(time.time())
-        if (t + 1) % 10 == 0:
+        if (t + 1) % 200 == 0:
             print('Img %d Iteration %5d   PSRN_gt: %.2f MSE_gt: %e' % (f_num, t + 1, psnr_gt, mse_gt))
     np.savez(specific_result_dir+'record', **record)
 
@@ -132,5 +132,5 @@ for f_num, f_name in enumerate(f_name_list):
         specific_result_dir = specific_result_dir,
         noise_sigma = 10 / 255,
         num_iter = 5000,
-        num_ratio = 0.5,
+        num_ratio = 1,
         GD_lr=0.001)
