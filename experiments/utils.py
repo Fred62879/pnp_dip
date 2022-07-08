@@ -233,8 +233,10 @@ def reconstruct(epoch, gt, recon, num_channels, args):
         recon_path = join(args.recon_dir, str(id))
         (mse, psnr, ssim) = reconstruct_(gt[0], recon[0], recon_path)
 
-        print('[Epoch/Total] [%d/%d] [MSE %.3f] [PSNR %.2f] [SSIM %.3f]'
-              % (epoch + 1, args.num_epochs, mse[0], psnr[0], ssim[0]))
+        print('[Epoch/Total] [%d/%d]' % (epoch + 1, args.num_epochs))
+        print(np.round(mse, 4))
+        print(np.round(psnr, 2))
+        print(np.round(ssim, 4))
         return [mse, psnr, ssim]
 
     else:

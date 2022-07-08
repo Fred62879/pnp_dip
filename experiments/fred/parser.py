@@ -44,15 +44,12 @@ def add_cmd_line_args(parser):
     # inpainting args
     parser.add_argument('--inpaint_cho', type=int, default=0, help='0-no inpaint, 1-spatial, 2-spectral')
     parser.add_argument('--mask_cho', type=int, default=0, help='0-diff across bands,1-same across bands,2-region')
-    parser.add_argument('--mask_band_cho', type=int, default=0)
-    parser.add_argument('--mask_sz', type=int, default=1)
+    parser.add_argument('--mask_band_cho', type=int, default=0, help='defines which band is masked')
+    parser.add_argument('--mask_bandset_cho', type=int, default=0, help='defines larger set of bands')
     parser.add_argument('--mask_seed', type=int, default=0)
-    parser.add_argument('--m_start_r', type=int, default=1)
-    parser.add_argument('--m_start_c', type=int, default=1)
     parser.add_argument('--sample_ratio', type=float, default=1.0)
-    parser.add_argument('--sample_ratio_cho', type=int, required=False)
-    parser.add_argument('--train_bands', nargs='+', required=False)
-    parser.add_argument('--inpaint_bands', nargs='+', required=False)
+    parser.add_argument('--sample_ratio_cho', type=int)
+    parser.add_argument('--current_bands', nargs='+', type=int)
 
     args = parser.parse_args()
     config = vars(args)
@@ -76,14 +73,19 @@ def add_input_paths(config):
 
         input_dir = join(data_dir, dr +'_input')
         img_data_dir = join(input_dir, sensor_col_nm, 'img_data')
-        mask_dir = join(input_dir, 'sampled_pixl_ids',
-                        'cutout_' + suffx[:-4] +
-                        '_mask_' + str(config['mask_band_cho']) +'_'
-                        + str(config['inpaint_cho']) + '_'
-                        + str(config['mask_cho']) + '_'
-                        + str(config['mask_seed']))
 
-        for path in [input_dir, mask_dir, img_data_dir]:
+        dirs = [input_dir, img_data_dir]
+
+        if config['inpaint_cho'] == 2:
+            mask_dir = join(input_dir, 'sampled_pixl_ids',
+                            'cutout_' + suffx[:-4] +
+                            '_mask_' + str(config['mask_bandset_cho']) +'_'
+                            + str(config['mask_band_cho']) + '_'
+                            + str(config['mask_cho']) + '_'
+                            + str(config['mask_seed']))
+            dirs.append(mask_dir)
+
+        for path in dirs:
             Path(path).mkdir(parents=True, exist_ok=True)
 
         config['data_dir'] = data_dir
@@ -132,19 +134,6 @@ def add_train_infer_args(config):
     config['loss_options'] = [1,2,4]
     config['metric_names'] = ['mse','psnr','ssim']
 
-    # inpaint specification
-    tb = config['train_bands']
-    ib = config['inpaint_bands']
-    if ib is None:
-        config['inpaint_bands'] = []
-    elif config['inpaint_cho'] == 1:
-        config['inpaint_bands'] = list(np.arange(config['num_bands']))
-    else:
-        config['inpaint_bands'] = [int(i) for i in ib]
-    if tb is None or config['inpaint_cho'] == 1:
-        config['train_bands'] = list(np.arange(config['num_bands']))
-    else:
-        config['train_bands'] = [int(i) for i in tb]
 
 def add_output_paths(config):
     if config['astro']:

@@ -1,9 +1,10 @@
 #!/bin/bash
+#SBATCH --array=0,1,9
 #SBATCH --time=1:00:00
 #SBATCH --gres=gpu:1
 #SBATCH --nodes=1
 #SBATCH --account=def-kyi-ab
-#SBATCH --job-name=pdr3_5_grizy_pnp_inpaint
+#SBATCH --job-name=pdr3_pnp_10_inpaint_try_run
 #SBATCH --output=./output/%x-%j.out
 #SBATCH --ntasks=3
 #SBATCH --mem-per-cpu=40000
@@ -24,6 +25,4 @@ cd ../
 #    done
 #done
 
-for ratio in 0.01 0.1 ; do
-    python main.py --config inpaint0.ini --sample_ratio $ratio
-done
+python main.py --config configs/inpaint10.ini --sample_ratio_cho $SLURM_ARRAY_TASK_ID
