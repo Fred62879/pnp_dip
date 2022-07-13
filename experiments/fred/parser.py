@@ -42,10 +42,10 @@ def add_cmd_line_args(parser):
     parser.add_argument('--verbose', action='store_true', default=False)
 
     # inpainting args
-    parser.add_argument('--inpaint_cho', type=int, default=0, help='0-no inpaint, 1-spatial, 2-spectral')
-    parser.add_argument('--mask_cho', type=int, default=0, help='0-diff across bands,1-same across bands,2-region')
-    parser.add_argument('--mask_band_cho', type=int, default=0, help='defines which band is masked')
-    parser.add_argument('--mask_bandset_cho', type=int, default=0, help='defines larger set of bands')
+    parser.add_argument('--inpaint_cho', type=str, default='no_inpaint')
+    parser.add_argument('--mask_config', type=str, default='rand_diff')
+    parser.add_argument('--mask_bandset_cho', type=str,default='None')
+    parser.add_argument('--mask_bands', type=str,default='None')
     parser.add_argument('--mask_seed', type=int, default=0)
     parser.add_argument('--sample_ratio', type=float, default=1.0)
     parser.add_argument('--sample_ratio_cho', type=int)
@@ -76,20 +76,20 @@ def add_input_paths(config):
 
         dirs = [input_dir, img_data_dir]
 
-        if config['inpaint_cho'] == 2:
+        if config['inpaint_cho'] == 'spectral_inpaint':
             mask_dir = join(input_dir, 'sampled_pixl_ids',
-                            'cutout_' + suffx[:-4] +
-                            '_mask_' + str(config['mask_bandset_cho']) +'_'
-                            + str(config['mask_band_cho']) + '_'
-                            + str(config['mask_cho']) + '_'
+                            'cutout_' + suffx[:-4] + '_mask_'
+                            + str(config['mask_config']) + '_'
+                            + str(config['mask_bandset_cho']) +'_'
+                            + str(config['mask_bands']) + '_'
                             + str(config['mask_seed']))
+            config['mask_dir'] = mask_dir
             dirs.append(mask_dir)
 
         for path in dirs:
             Path(path).mkdir(parents=True, exist_ok=True)
 
         config['data_dir'] = data_dir
-        config['mask_dir'] = mask_dir
         config['input_dir'] = input_dir
         config['dud_dir'] = join(input_dir, dr+'_dud')
         config['gt_img_fn'] = join(img_data_dir, 'gt_img_'+ suffx)
@@ -123,7 +123,7 @@ def add_train_infer_args(config):
     num_pixls = config['img_sz']**2
 
     # train and infer args
-    if config['inpaint_cho'] == 1: # spatial inpainting
+    if config['inpaint_cho'] == 'spatial_inpaint':
         config['npixls'] = int(num_pixls * config['sample_ratio'])
         config['num_train_pixls'] = int(num_pixls * config['sample_ratio'])
     else:
@@ -134,6 +134,14 @@ def add_train_infer_args(config):
     config['loss_options'] = [1,2,4]
     config['metric_names'] = ['mse','psnr','ssim']
 
+    # inpaint specification
+    if ['inpaint_cho'] != 'no_inpaint':
+        if config['mask_bandset_cho'] == '10':
+            config['mask_bandset'] = [0,1,2,3,4,5,6,7,8,9]
+        elif config['mask_bandset_cho'] == '5grizy':
+            config['mask_bandset'] = [0,1,2,3,4]
+        else:
+            raise Exception('Unsupported mask bandsets')
 
 def add_output_paths(config):
     if config['astro']:
@@ -153,7 +161,7 @@ def add_output_paths(config):
             config[path_nm] = path
             Path(path).mkdir(parents=True, exist_ok=True)
 
-        if config['mask_cho'] != 2:
+        if config['mask_config'] != 'region':
             mask_str = '_' + str(float(100 * config['sample_ratio']))
         else:
             mask_str = '_' + str(config['m_start_r'])+'_' +\
@@ -187,7 +195,7 @@ def process_config(config):
     config['img_id'] = config['footprint'] + config['tile_id'] + config['subtile_id']
 
     # redefine sample ratio if do inpainting and cho specified
-    if config['inpaint_cho'] != 0 and config['sample_ratio_cho'] is not None:
+    if config['inpaint_cho'] != 'no_inpaint' and config['sample_ratio_cho'] is not None:
         ratios = [0, 0.0001, 0.001, 0.005, 0.01, 0.05, 0.1, 0.2, 0.5, 0.8, 1.0]
         config['sample_ratio'] = ratios[config['sample_ratio_cho']]
 
