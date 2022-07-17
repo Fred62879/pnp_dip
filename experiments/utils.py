@@ -220,6 +220,29 @@ def linf_prox_x_b(x, b, shrinkage_param):
 
 
 ### reconstruction
+def restore_unmasked(recon, gt, mask):
+    ''' fill recon with unmasked pixels from gt
+        recon/gt/mask [nbands,sz,sz]
+    '''
+    (nbands,sz,sz) = recon.shape
+    npixls = sz**2
+
+    recon = recon.reshape((nbands, -1))
+    gt = gt.reshape((nbands, -1))
+
+    for i in range(nbands):
+        cur_mask = mask[i]
+        is_train_band = np.count_nonzero(cur_mask) == npixls
+        if is_train_band:
+            recon[i] = gt[i]
+        else:
+            ids = np.arange(npixls).reshape((sz,sz))
+            unmasked_ids = (ids[cur_mask == 1]).flatten()
+            recon[i][unmasked_ids] = gt[i][unmasked_ids]
+
+    recon = recon.reshape((-1,sz,sz))
+    return recon
+
 def get_header(dir, sz):
     hdu = fits.open(join(dir, 'pdr3_dud/calexp-HSC-G-9813-0%2C0.fits'))[1]
     header = hdu.header
@@ -231,7 +254,9 @@ def reconstruct(epoch, gt, recon, num_channels, args):
     if args.astro:
         id = (epoch + 1) // args.model_smpl_intvl
         recon_path = join(args.recon_dir, str(id))
-        (mse, psnr, ssim) = reconstruct_(gt[0], recon[0], recon_path)
+        mask = None if not args.recon_restore else \
+            np.load(args.sampled_pixl_id_fn).T.reshape((-1,args.img_sz,args.img_sz))
+        (mse, psnr, ssim) = reconstruct_(gt[0], recon[0], recon_path=recon_path, mask=mask)
 
         print('[Epoch/Total] [%d/%d]' % (epoch + 1, args.num_epochs))
         print(np.round(mse, 4))
@@ -258,12 +283,17 @@ def reconstruct(epoch, gt, recon, num_channels, args):
               % (epoch + 1, args.num_epochs, psnr_gt, mse_gt))
         return None
 
-def reconstruct_(gt, recon, recon_path=None, header=None):
+def reconstruct_(gt, recon, recon_path=None, header=None, mask=None):
     # gt/recon, [c,h,w]
     sz = gt.shape[1]
 
     if recon_path is not None:
         np.save(recon_path + '.npy', recon)
+
+    if mask is not None:
+        print(recon.shape, gt.shape, mask.shape)
+        recon_restored = restore_unmasked(recon, gt, mask)
+        np.save(recon_path + '_restored.npy', recon_restored)
 
     #print('GT max', np.round(np.max(gt, axis=(1,2)), 3) )
     #print('Recon pixl max ', np.round(np.max(recon, axis=(1,2)), 3) )

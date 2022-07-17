@@ -40,6 +40,7 @@ def add_cmd_line_args(parser):
     parser.add_argument('--dim',type=int, default=3)
     parser.add_argument('--num_epochs', type=int, default=4000)
     parser.add_argument('--verbose', action='store_true', default=False)
+    parser.add_argument('--recon_restore', action='store_true', default=False)
 
     # inpainting args
     parser.add_argument('--inpaint_cho', type=str, default='no_inpaint')
