@@ -309,7 +309,7 @@ def reconstruct_(gt, recon, recon_path=None, header=None, mask=None):
 
     return losses
 
-def calculate_ssim(gt, gen):
+def calculate_ssim(gen, gt):
     rg = np.max(gt)-np.min(gt)
     return structural_similarity(gt, gen, data_range=rg)
                                  #win_size=len(org_img))
@@ -331,7 +331,7 @@ def calculate_ncc(img1, img2):
 
 def get_loss(gt, gen, mx, j, option):
     if option == 0:
-        loss = np.abs(gt[j] - gen[j]).mean()
+        loss = np.abs(gen[j] - gt[j]).mean()
     elif option == 1:
         loss = calculate_mse(gen[j], gt[j])
     elif option == 2:
